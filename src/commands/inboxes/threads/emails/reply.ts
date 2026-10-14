@@ -1,6 +1,8 @@
 import { Command } from '@commander-js/extra-typings';
 import { runCreate } from '../../../../lib/actions';
+import { resolveAttachments } from '../../../../lib/attachments';
 import type { GlobalOpts } from '../../../../lib/client';
+import { parseHeaderPairs } from '../../../../lib/headers';
 import { buildHelpText } from '../../../../lib/help-text';
 import { outputError } from '../../../../lib/output';
 import { pickId, requireText } from '../../../../lib/prompts';
@@ -36,8 +38,20 @@ export const replyInboxThreadEmailCommand = new Command('reply')
   .option('--html <html>', 'HTML body of the reply')
   .option('--subject <subject>', 'Override the reply subject')
   .option(
+    '--attachment <specs...>',
+    'File path or URL to attach, with optional ;cid= ;type= ;filename= params (quote the value)',
+  )
+  .option(
+    '--attachments-file <path>',
+    'Path to a JSON array of attachment objects (use "-" for stdin)',
+  )
+  .option(
     '--reply-all',
     'Reply to everyone on the original email, not only its author',
+  )
+  .option(
+    '--headers <key=value...>',
+    'Custom headers as key=value pairs (e.g. X-Entity-Ref-ID=123)',
   )
   .option(
     '--idempotency-key <key>',
@@ -50,16 +64,36 @@ export const replyInboxThreadEmailCommand = new Command('reply')
 original email, or its Reply-To address if it has one. If the inbox sent the original
 email, the reply goes to that email's "to" recipients.
 At least one of --text or --html is required.
---reply-all also adds the original "to" and "cc" recipients, without the inbox address.
-Bcc is never copied.
+--reply-all also copies the other recipients. For a received email, the reply
+goes to its Reply-To addresses, or to its sender, and copies the other addresses
+of its "To" header and its "cc". For an email the inbox sent, the reply goes to
+its Reply-To addresses when they are not the inbox address, otherwise to its "to"
+recipients, and copies its other "to" recipients and its "cc". The inbox
+address is always excluded, and duplicates are removed. Bcc is never copied.
 --cc and --bcc add recipients. With --reply-all, --cc merges with the copied cc,
 without duplicates.
-The total number of recipients cannot exceed 50, counted after --reply-all adds everyone.`,
-      output: `  {"id":"<uuid>","email_id":"<uuid>","direction":"outbound","from":"<inbox-address>","to":["<recipient>"],"cc":[],"bcc":[],"reply_to":[],"subject":"<subject>|null","message_id":"<message-id>|null","html":"<html>|null","text":"<text>|null","attachments":[],"read":true,"received_at":"<date>"}`,
+The total number of recipients cannot exceed 50, counted after --reply-all adds everyone.
+Attachments: --attachment takes a local path or an http:// or https:// URL plus optional
+;cid=, ;type= and ;filename= params, as on "resend emails send". Quote values
+that contain ";". --attachments-file takes a JSON array of attachment objects.
+Up to 10 files. The content of all files can total at most 25 MB. A URL file
+counts toward the 10 files only, because it is fetched when the email is sent.
+An empty file, a blocked file type, or a URL that is not http or https, or that
+points to localhost, returns an error.
+--headers adds custom headers. In-Reply-To, References and Reply-To are reserved:
+Resend sets them, and passing any of them, in any letter case, returns an error.
+A header name cannot be empty, and names and values cannot contain line breaks
+or null characters.
+The output holds the ID of the sent email. Use it with "resend emails get".`,
+      output: `  {"id":"<email-id>"}`,
       errorCodes: [
         'auth_error',
         'missing_id',
         'missing_content',
+        'invalid_header',
+        'invalid_attachment',
+        'file_read_error',
+        'stdin_read_error',
         'create_error',
       ],
       examples: [
@@ -67,6 +101,7 @@ The total number of recipients cannot exceed 50, counted after --reply-all adds 
         'resend inboxes threads emails reply --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --html "<p>Done!</p>" --json',
         'resend inboxes threads emails reply --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --text "Looping in finance." --cc finance@example.com',
         'resend inboxes threads emails reply --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --text "Thanks, all." --reply-all',
+        'resend inboxes threads emails reply --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --text "Invoice attached." --attachment ./invoice.pdf',
       ],
     }),
   )
@@ -107,6 +142,13 @@ The total number of recipients cannot exceed 50, counted after --reply-all adds 
       ? { text, ...(html && { html }) }
       : { html: html as string };
 
+    const headers = parseHeaderPairs(opts.headers, globalOpts);
+    const attachments = resolveAttachments(
+      opts.attachment,
+      opts.attachmentsFile,
+      globalOpts,
+    );
+
     await runCreate(
       {
         loading: 'Sending reply...',
@@ -121,17 +163,15 @@ The total number of recipients cannot exceed 50, counted after --reply-all adds 
               ...(opts.bcc.length > 0 && { bcc: opts.bcc }),
               ...(opts.subject && { subject: opts.subject }),
               ...(opts.replyAll && { replyAll: true }),
+              ...(attachments && { attachments }),
+              ...(headers && { headers }),
             },
-            opts.idempotencyKey
+            opts.idempotencyKey !== undefined
               ? { idempotencyKey: opts.idempotencyKey }
               : undefined,
           ),
         onInteractive: (data) => {
-          console.log(`Reply sent: ${data.email_id}`);
-          console.log(`To: ${data.to.join(', ')}`);
-          if (data.cc.length > 0) {
-            console.log(`Cc: ${data.cc.join(', ')}`);
-          }
+          console.log(`Reply sent: ${data.id}`);
         },
       },
       globalOpts,

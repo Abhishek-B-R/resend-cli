@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   afterEach,
   beforeEach,
@@ -23,23 +26,7 @@ const EMAIL_ID = '5e0e0b3c-9497-47d3-a527-4bd5e0e2f0f5';
 const REPLY_ID = '9f3b5a1e-2c4d-4e6f-8a0b-1c2d3e4f5a6b';
 
 const mockReply = vi.fn(async () => ({
-  data: {
-    id: REPLY_ID,
-    email_id: REPLY_ID,
-    direction: 'outbound' as const,
-    from: 'support@acme.dev',
-    to: ['customer@example.com'],
-    cc: [],
-    bcc: [],
-    reply_to: [],
-    subject: 'Re: Billing question',
-    message_id: null,
-    html: null,
-    text: 'You were only charged once.',
-    attachments: [],
-    read: true,
-    received_at: '2026-09-15T00:00:00.000Z',
-  },
+  data: { id: REPLY_ID },
   error: null,
 }));
 
@@ -213,7 +200,7 @@ describe('inboxes threads emails reply command', () => {
     expect(args).not.toHaveProperty('replyAll');
   });
 
-  it('outputs JSON with email_id when non-interactive', async () => {
+  it('outputs the sent email id as JSON when non-interactive', async () => {
     spies = setupOutputSpies();
 
     await replyInboxThreadEmailCommand.parseAsync(
@@ -231,9 +218,7 @@ describe('inboxes threads emails reply command', () => {
     );
 
     const output = spies.logSpy.mock.calls[0][0] as string;
-    const parsed = JSON.parse(output);
-    expect(parsed.email_id).toBe(REPLY_ID);
-    expect(parsed.direction).toBe('outbound');
+    expect(JSON.parse(output)).toEqual({ id: REPLY_ID });
   });
 
   it('passes idempotencyKey as second arg to threads.emails.reply', async () => {
@@ -312,5 +297,131 @@ describe('inboxes threads emails reply command', () => {
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
     expect(output).toContain('create_error');
+  });
+  it('reads --attachment files and --attachments-file into attachments', async () => {
+    setupOutputSpies();
+    const dir = mkdtempSync(join(tmpdir(), 'resend-inbox-attachments-'));
+    const file = join(dir, 'notes.txt');
+    const jsonFile = join(dir, 'attachments.json');
+    writeFileSync(file, 'hello');
+    writeFileSync(
+      jsonFile,
+      JSON.stringify([{ filename: 'extra.txt', content: 'aGk=' }]),
+    );
+
+    try {
+      await replyInboxThreadEmailCommand.parseAsync(
+        [
+          '--inbox_id',
+          INBOX_ID,
+          '--thread_id',
+          THREAD_ID,
+          '--email_id',
+          EMAIL_ID,
+          '--text',
+          'See attached.',
+          '--attachment',
+          file,
+          'https://example.com/report.pdf;filename=report.pdf',
+          '--attachments-file',
+          jsonFile,
+        ],
+        { from: 'user' },
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    const args = mockReply.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const attachments = args.attachments as Array<Record<string, unknown>>;
+    expect(attachments).toHaveLength(3);
+    expect(attachments[0].filename).toBe('notes.txt');
+    expect(Buffer.isBuffer(attachments[0].content)).toBe(true);
+    expect(attachments[1]).toEqual({
+      path: 'https://example.com/report.pdf',
+      filename: 'report.pdf',
+    });
+    expect(attachments[2]).toEqual({ filename: 'extra.txt', content: 'aGk=' });
+  });
+
+  it('errors with file_read_error when an --attachment file is missing', async () => {
+    setNonInteractive();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    exitSpy = mockExitThrow();
+    mockReply.mockClear();
+
+    await expectExit1(() =>
+      replyInboxThreadEmailCommand.parseAsync(
+        [
+          '--inbox_id',
+          INBOX_ID,
+          '--thread_id',
+          THREAD_ID,
+          '--email_id',
+          EMAIL_ID,
+          '--text',
+          'See attached.',
+          '--attachment',
+          '/tmp/nonexistent-resend-inbox-attachment.txt',
+        ],
+        { from: 'user' },
+      ),
+    );
+
+    const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
+    expect(output).toContain('file_read_error');
+    expect(mockReply).not.toHaveBeenCalled();
+  });
+
+  it('passes --headers to the SDK', async () => {
+    setupOutputSpies();
+
+    await replyInboxThreadEmailCommand.parseAsync(
+      [
+        '--inbox_id',
+        INBOX_ID,
+        '--thread_id',
+        THREAD_ID,
+        '--email_id',
+        EMAIL_ID,
+        '--text',
+        'ok',
+        '--headers',
+        'X-Ticket-Id=4821',
+      ],
+      { from: 'user' },
+    );
+
+    const args = mockReply.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(args.headers).toEqual({ 'X-Ticket-Id': '4821' });
+  });
+
+  it('errors with invalid_header for a header without =', async () => {
+    setNonInteractive();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    exitSpy = mockExitThrow();
+    mockReply.mockClear();
+
+    await expectExit1(() =>
+      replyInboxThreadEmailCommand.parseAsync(
+        [
+          '--inbox_id',
+          INBOX_ID,
+          '--thread_id',
+          THREAD_ID,
+          '--email_id',
+          EMAIL_ID,
+          '--text',
+          'ok',
+          '--headers',
+          'X-Ticket-Id',
+        ],
+        { from: 'user' },
+      ),
+    );
+
+    const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
+    expect(output).toContain('invalid_header');
+    expect(mockReply).not.toHaveBeenCalled();
   });
 });

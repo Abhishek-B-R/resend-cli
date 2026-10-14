@@ -82,10 +82,20 @@ export const searchInboxThreadsCommand = new Command('search')
       context: `Results are ordered by newest activity first and paginate like
 "resend inboxes threads list". Each result names the email that matched
 (matched_email_id) and the matching snippets (highlights).
+"threads emails get", "reply" and "forward" accept matched_email_id as
+--email_id, but it is not equal to the id those commands return.
+
+Different flags combine, so a thread must match all of them. --folders,
+--labels, --read and --unread apply to the thread. The other filters must all
+match the same email in the thread. When any of these email filters is set,
+the matching email must itself be in one of --folders. For "sent", that means
+an email the inbox sent.
+When more than 10,000 threads match, search covers the 10,000 with the newest
+matching email.
 
 Search can be up to about a minute behind new emails. To browse an inbox
 exactly and up to date, use "resend inboxes threads list".`,
-      output: `  {"object":"list","has_more":false,"data":[{"id":"<uuid>","subject":"<subject>|null","from":"<sender>|null","to":[],"cc":[],"bcc":[],"labels":[],"message_count":1,"has_attachment":false,"has_draft":false,"read":false,"received_at":"<date>","folder":"inbox|archive|spam|sent|trash","matched_email_id":"<uuid>|null","highlights":{"subject":["<snippet>"]}}]}`,
+      output: `  {"object":"list","has_more":false,"data":[{"id":"<uuid>","subject":"<subject>|null","from":"<sender>|null","to":[],"cc":[],"bcc":[],"labels":[],"email_count":1,"has_attachment":false,"has_draft":false,"read":false,"received_at":"<date>","folder":"inbox|archive|spam|sent|trash","matched_email_id":"<uuid>|null","highlights":{"subject":["<snippet>"]}}]}`,
       errorCodes: [
         'auth_error',
         'invalid_options',

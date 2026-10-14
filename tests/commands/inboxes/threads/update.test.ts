@@ -85,7 +85,19 @@ describe('inboxes threads update command', () => {
     expect(args.folder).toBe('archive');
   });
 
-  it('maps --unread to read: false and passes --label_id', async () => {
+  it('maps --unread to read: false', async () => {
+    setupOutputSpies();
+
+    await updateInboxThreadCommand.parseAsync(
+      ['--inbox_id', INBOX_ID, '--thread_id', THREAD_ID, '--unread'],
+      { from: 'user' },
+    );
+
+    const args = mockUpdate.mock.calls[0][0] as Record<string, unknown>;
+    expect(args.read).toBe(false);
+  });
+
+  it('passes --add_label_ids and --remove_label_ids', async () => {
     setupOutputSpies();
 
     await updateInboxThreadCommand.parseAsync(
@@ -94,16 +106,19 @@ describe('inboxes threads update command', () => {
         INBOX_ID,
         '--thread_id',
         THREAD_ID,
-        '--unread',
-        '--label_id',
+        '--add_label_ids',
         'label-1',
+        'label-2',
+        '--remove_label_ids',
+        'label-3',
       ],
       { from: 'user' },
     );
 
     const args = mockUpdate.mock.calls[0][0] as Record<string, unknown>;
-    expect(args.read).toBe(false);
-    expect(args.labelId).toBe('label-1');
+    expect(args.addLabelIds).toEqual(['label-1', 'label-2']);
+    expect(args.removeLabelIds).toEqual(['label-3']);
+    expect(args.read).toBeUndefined();
   });
 
   it('errors with invalid_options when --read and --unread are combined', async () => {

@@ -2,10 +2,6 @@
 
 Detailed flag specifications for `resend inboxes` commands.
 
-> **Beta:** Inboxes is a pre-GA feature gated per account. Commands appear in
-> `--help` but return an API error unless inboxes is enabled for your account.
-> Reach out to Resend to join the beta.
-
 An inbox is an email address at one of your verified domains that sends and
 receives email. Receiving must be enabled on the domain, unless the inbox is
 created with `--forwarding`. Received messages are grouped into threads inside
@@ -21,13 +17,14 @@ Create a new inbox at one of your verified domains.
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
 | `--email_address <address>` | string | Yes (non-interactive) | Address for the inbox, e.g. `support@yourdomain.com` |
-| `--name <name>` | string | No | Inbox name shown in the dashboard (max 64 chars) |
+| `--name <name>` | string | No | Internal name for the inbox, recipients do not see it (max 64 chars) |
 | `--from_name <name>` | string | No | Name used when sending from this inbox, e.g. `Ada from Support`. A plain name, not `Name <email>` |
-| `--forwarding` | boolean | No | Receive mail without an MX record — Resend returns a `receiving_address` to forward mail to |
+| `--forwarding` | boolean | No | Receive mail without an MX record — Resend generates a `receiving_address` to forward mail to |
 
-Creates the inbox, then fetches it, so the output includes `receiving_address`.
+The output holds only the inbox ID. Run `inboxes get <id>` to read the other
+fields, such as `receiving_address`.
 
-**Output:** `{"object":"inbox","id":"<uuid>","name":"<name>","email_address":"<address>","domain_id":"<uuid>","receiving_address":"<address>"|null,"from_name":"<name>"|null,"unread":0,"drafts":0,"last_received":"<date>"|null,"created_at":"<date>"}`
+**Output:** `{"object":"inbox","id":"<uuid>"}`
 
 ---
 
@@ -66,7 +63,7 @@ The email address cannot be changed after creation.
 
 | Flag | Type | Description |
 |------|------|-------------|
-| `--name <name>` | string | New inbox name (max 64 chars) |
+| `--name <name>` | string | New internal name for the inbox, recipients do not see it (max 64 chars) |
 | `--from_name <name>` | string | New name used when sending from this inbox. A plain name, not `Name <email>`. Pass `""` to clear it |
 
 **Output:** `{"object":"inbox","id":"<uuid>"}`
@@ -95,7 +92,7 @@ are only included when you name them.
 
 **Alias:** `ls`
 
-**Output:** `{"object":"list","has_more":false,"data":[{"id":"<uuid>","subject":"<subject>"|null,"from":"<sender>"|null,"to":[],"cc":[],"bcc":[],"labels":[],"message_count":1,"has_attachment":false,"has_draft":false,"read":false,"received_at":"<date>","folder":"inbox|archive|spam|sent|trash"}]}`
+**Output:** `{"object":"list","has_more":false,"data":[{"id":"<uuid>","subject":"<subject>"|null,"from":"<sender>"|null,"to":[],"cc":[],"bcc":[],"labels":[],"email_count":1,"has_attachment":false,"has_draft":false,"read":false,"received_at":"<date>","folder":"inbox|archive|spam|sent|trash"}]}`
 
 ---
 
@@ -104,6 +101,11 @@ are only included when you name them.
 Search threads by text, people, attachments, and dates. Results are ordered by
 newest activity first and paginate like `threads list`. Search can be up to
 about a minute behind new emails; use `threads list` to browse exactly.
+Different flags combine, so a thread must match all of them. `--folders`,
+`--labels`, `--read`, and `--unread` apply to the thread; the other filters
+must all match the same email in the thread, and that email must itself be in
+one of `--folders` (for `sent`, an email the inbox sent). When more than 10,000 threads
+match, search covers the 10,000 with the newest matching email.
 
 **Flags:** `--inbox_id <id>` — required in non-interactive mode
 
@@ -126,6 +128,8 @@ and `--before`, same as `threads list`.
 `"highlights"` on each thread. `highlights` only has keys where `--query`
 matched (`subject`, `body`, `from`, `to`, `cc`, `bcc`, `attachments`), each an
 array of snippets with matches wrapped in `**`, and is `{}` without `--query`.
+`threads emails get`, `reply`, and `forward` accept `matched_email_id` as
+`--email_id`, but it is not equal to the `id` those commands return.
 
 ---
 
@@ -142,8 +146,12 @@ Retrieve a thread's summary. To read its messages, use
 
 ## inboxes threads update
 
-Mark a thread read/unread, move it, or apply a label. At least one option is
-required.
+Mark a thread read/unread, move it, or add and remove labels. At least one
+option is required. A label ID cannot be both added and removed in the same
+request. Removing a label from a thread keeps the label itself. Moving a
+thread out of `trash` restores it and clears its deletion deadline. The changes
+apply in this order: read, folder, added labels, removed labels. They are not
+atomic, so an unknown label leaves the earlier changes applied.
 
 **Flags:** `--inbox_id <id> --thread_id <id>` — required in non-interactive mode
 
@@ -152,7 +160,8 @@ required.
 | `--read` | boolean | Mark every message in the thread as read |
 | `--unread` | boolean | Mark every message in the thread as unread |
 | `--folder <folder>` | string | Move to one of `inbox`, `archive`, `spam`, `trash` (`sent` is not a valid target) |
-| `--label_id <label_id>` | string | Apply this label (UUID) to the thread |
+| `--add_label_ids <label_ids...>` | string[] | Label UUIDs to apply to the thread, 1 to 10 |
+| `--remove_label_ids <label_ids...>` | string[] | Label UUIDs to remove from the thread, 1 to 10 |
 
 **Output:** `{"object":"inbox_thread","id":"<uuid>","subject":"<subject>"|null,"folder":"<folder>","labels":[],"read":true}`
 
@@ -160,7 +169,10 @@ required.
 
 ## inboxes threads delete
 
-Delete a thread and all of its messages.
+Move a thread to `trash` and schedule it for deletion in 30 days. This is
+reversible. To restore the thread, move it to `inbox`, `archive`, or `spam`
+with `threads update --folder`, which also clears the deletion deadline.
+`deleted` is `false` when the thread was already in trash.
 
 **Flags:** `--inbox_id <id> --thread_id <id>` — required in non-interactive mode
 
@@ -210,7 +222,10 @@ Reply to a specific email in a thread. The reply is sent from the inbox
 address. It goes to the author of the original email, or its Reply-To address
 if it has one. If the inbox sent the original email, it goes to that email's
 `to` recipients. The total number of recipients cannot exceed 50, counted after
-`--reply-all` adds everyone.
+`--reply-all` adds everyone. A reply takes up to 10 attachments, with at most
+25 MB of content in total. A URL file counts toward the 10 files only. An
+empty file, a blocked file type, or a URL that is not `http` or `https`, or
+that points to `localhost`, returns an error.
 
 **Flags:** `--inbox_id <id> --thread_id <id> --email_id <id>` — required in
 non-interactive mode; the email ID comes from `inboxes threads emails list`
@@ -222,10 +237,13 @@ non-interactive mode; the email ID comes from `inboxes threads emails list`
 | `--text <text>` | string | One of text/html | Plain text reply body |
 | `--html <html>` | string | One of text/html | HTML reply body |
 | `--subject <subject>` | string | No | Override the reply subject |
-| `--reply-all` | boolean | No | Reply to everyone on the original email: the author (or its Reply-To address) and the original `to` and `cc` recipients, without the inbox address. Bcc is never copied |
+| `--attachment <specs...>` | string[] | No | File path or URL to attach, with optional `;cid=`, `;type=`, `;filename=` params, as on `emails send`. Quote values that contain `;` |
+| `--attachments-file <path>` | string | No | JSON array of attachment objects (`-` for stdin) |
+| `--reply-all` | boolean | No | Reply to everyone on the original email. For a received email: its Reply-To (or its sender), copying the other `To` header addresses and its `cc`. For an email the inbox sent: its Reply-To when it is not the inbox address, otherwise its `to`, copying its other `to` addresses and its `cc`. The inbox address is excluded, duplicates are removed, and Bcc is never copied |
+| `--headers <key=value...>` | string[] | No | Custom headers as `key=value` pairs. `In-Reply-To`, `References`, and `Reply-To` are reserved: Resend sets them, and passing any of them, in any letter case, returns an error. A header name cannot be empty, and names and values cannot contain line breaks or null characters |
 | `--idempotency-key <key>` | string | No | Deduplicate request |
 
-**Output:** `{"id":"<uuid>","email_id":"<uuid>","direction":"outbound","from":"<inbox-address>","to":["<recipient>"],"cc":[],"bcc":[],"reply_to":[],"subject":"<subject>"|null,"message_id":"<message-id>"|null,"html":"<html>"|null,"text":"<text>"|null,"attachments":[],"read":true,"received_at":"<date>"}`
+**Output:** `{"id":"<email-id>"}`, the ID of the sent email. Use it with `emails get`.
 
 ---
 
@@ -243,19 +261,28 @@ Forward an email to other recipients from the inbox address.
 | `--text <text>` | string | No | Plain text note to include |
 | `--html <html>` | string | No | HTML note to include |
 | `--subject <subject>` | string | No | Override the forwarded subject |
+| `--attachment <specs...>` | string[] | No | File path or URL to attach, with optional `;cid=`, `;type=`, `;filename=` params, as on `emails send`. Quote values that contain `;` |
+| `--attachments-file <path>` | string | No | JSON array of attachment objects (`-` for stdin) |
+| `--headers <key=value...>` | string[] | No | Custom headers as `key=value` pairs. `In-Reply-To`, `References`, and `Reply-To` are reserved: Resend sets them, and passing any of them, in any letter case, returns an error. A header name cannot be empty, and names and values cannot contain line breaks or null characters |
 | `--idempotency-key <key>` | string | No | Deduplicate request |
 
-`--to`, `--cc`, and `--bcc` combined cannot exceed 50 recipients.
+`--to`, `--cc`, and `--bcc` combined cannot exceed 50 recipients. The
+attachments of the original email are sent with the forward, together with any
+files you add. Together they can have up to 10 files and at most 25 MB of
+content. A URL file counts toward the 10 files only. An empty file, a blocked
+file type, or a URL that is not `http` or `https`, or that points to
+`localhost`, returns an error. An original attachment
+that was sent from a URL cannot be forwarded, and the request returns an error.
 
-**Output:** `{"id":"<uuid>","email_id":"<uuid>","direction":"outbound","from":"<inbox-address>","to":["<recipient>"],"cc":[],"bcc":[],"reply_to":[],"subject":"<subject>"|null,"message_id":"<message-id>"|null,"html":"<html>"|null,"text":"<text>"|null,"attachments":[],"read":true,"received_at":"<date>"}`
+**Output:** `{"id":"<email-id>"}`, the ID of the sent email. Use it with `emails get`.
 
 ---
 
 ## inboxes labels list
 
 List all labels in an inbox (not paginated; default subcommand of
-`resend inboxes labels`). Use label IDs with `threads update --label_id` and
-`threads list --labels`.
+`resend inboxes labels`). Use label IDs with `threads update --add_label_ids`
+and `threads list --labels`.
 
 **Flags:** `--inbox_id <id>` — required in non-interactive mode
 
@@ -267,7 +294,8 @@ List all labels in an inbox (not paginated; default subcommand of
 
 ## inboxes labels create
 
-Create a label. An inbox can have up to 100 labels.
+Create a label. An inbox can have up to 100 labels. Label names are unique per
+inbox, compared without case. The color is stored in uppercase.
 
 **Flags:** `--inbox_id <id>` — required in non-interactive mode
 
@@ -325,16 +353,22 @@ List drafts in an inbox (default subcommand of `resend inboxes drafts`).
 
 **Alias:** `ls`
 
-**Output:** `{"object":"list","has_more":false,"data":[{"id":"<uuid>","type":"standalone|reply","to":["<address>"]|null,"cc":[],"bcc":[],"subject":"<subject>"|null,"snippet":"<text>"|null,"thread_id":"<uuid>"|null,"reply_to_email_id":"<uuid>"|null,"updated_at":"<date>"}]}`
+**Output:** `{"object":"list","has_more":false,"data":[{"id":"<uuid>","type":"standalone|reply","to":["<address>"]|null,"cc":[],"bcc":[],"subject":"<subject>"|null,"snippet":"<text>"|null,"thread_id":"<uuid>"|null,"reply_to_email_id":"<uuid>"|null,"attachments":[{"id":"<uuid>","filename":"<name>","content_type":"<type>","size":123}],"updated_at":"<date>"}]}`
 
 ---
 
 ## inboxes drafts create
 
 Create a standalone draft, or a reply draft when `--thread_id` and
-`--reply_to_email_id` are passed **together**. A reply draft does not copy
-recipients from the email it replies to, so set `--to` before you send it. At
-least one content field is required. Combined recipients cannot exceed 50.
+`--reply_to_email_id` are passed **together**. A reply draft without `--to` is
+addressed to the sender of the email it replies to, or to its Reply-To when
+set. For an email the inbox sent, it defaults to that email's `to` recipients.
+At least one content field, attachments included, is required. Combined recipients cannot exceed 50.
+Only one unsent reply draft can target an email. A reply draft for an email
+that already has one returns the ID of the existing draft. That request ignores
+every other flag, except the attachments, which replace the attachments of the
+existing draft. A reply draft created without `--subject` has an empty subject
+and gets no `Re:` prefix, so set one before you send it.
 
 **Flags:** `--inbox_id <id>` — required in non-interactive mode
 
@@ -348,6 +382,13 @@ least one content field is required. Combined recipients cannot exceed 50.
 | `--html <html>` | string | HTML body |
 | `--thread_id <thread_id>` | string | Thread to reply to (pairs with `--reply_to_email_id`) |
 | `--reply_to_email_id <email_id>` | string | Email the draft replies to (pairs with `--thread_id`) |
+| `--idempotency-key <key>` | string | Deduplicate request |
+| `--attachment <specs...>` | string[] | Local file to attach with `;type=<MIME type>` and an optional `;filename=`. Quote values that contain `;` |
+| `--attachments-file <path>` | string | JSON array of objects with `content` (base64), `filename`, and `content_type` (`-` for stdin) |
+
+Draft attachments need `content`, `filename`, and `content_type`. A URL or a
+`;cid=` returns an error. The files on a draft can total at most 25 MB. An
+empty file or a blocked file type, such as `.exe`, returns an error.
 
 **Output:** `{"object":"inbox_draft","id":"<uuid>"}`
 
@@ -359,15 +400,20 @@ Retrieve a draft, including its full body.
 
 **Flags:** `--inbox_id <id> --draft_id <id>` — required in non-interactive mode
 
-**Output:** `{"object":"inbox_draft","id":"<uuid>","type":"standalone|reply","to":["<address>"]|null,"cc":[],"bcc":[],"subject":"<subject>"|null,"html":"<html>"|null,"text":"<text>"|null,"thread_id":"<uuid>"|null,"reply_to_email_id":"<uuid>"|null,"email_id":null,"created_at":"<date>","updated_at":"<date>"}`
+**Output:** `{"object":"inbox_draft","id":"<uuid>","type":"standalone|reply","to":["<address>"]|null,"cc":[],"bcc":[],"subject":"<subject>"|null,"html":"<html>"|null,"text":"<text>"|null,"thread_id":"<uuid>"|null,"reply_to_email_id":"<uuid>"|null,"email_id":null,"attachments":[{"id":"<uuid>","filename":"<name>","content_type":"<type>","size":123}],"created_at":"<date>","updated_at":"<date>"}`
 
 ---
 
 ## inboxes drafts update
 
 Update a draft's recipients, subject, or body. At least one option is
-required; provided fields replace existing values. Same flags as
-`drafts create` minus `--thread_id`/`--reply_to_email_id`.
+required; provided fields replace existing values. Setting `--text` or
+`--html` replaces the whole body, so the body part you omit becomes `null`. A
+draft that was already sent returns an error. Same flags as `drafts create`
+minus `--thread_id`, `--reply_to_email_id`, and `--idempotency-key`, plus
+`--clear-attachments`.
+`--attachment` and `--attachments-file` replace every attachment on the draft.
+`--clear-attachments` removes them all. Omit all three to keep them.
 
 **Flags:** `--inbox_id <id> --draft_id <id>` — required in non-interactive mode
 
@@ -377,7 +423,7 @@ required; provided fields replace existing values. Same flags as
 
 ## inboxes drafts delete
 
-Delete a draft.
+Discard an unsent draft. A draft that was already sent returns an error.
 
 **Flags:** `--inbox_id <id> --draft_id <id>` — required in non-interactive mode
 
@@ -393,16 +439,19 @@ Delete a draft.
 
 ## inboxes drafts send
 
-Send a draft from the inbox address. The draft must have recipients and a
-body.
+Send a draft from the inbox address. A reply draft is sent in its thread. A
+draft without a thread starts a new thread. The draft must have at least one
+`to` recipient, a non-empty subject, and `html` or `text`. A draft that was
+already sent returns an error.
 
 **Flags:** `--inbox_id <id> --draft_id <id>` — required in non-interactive mode
 
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
+| `--headers <key=value...>` | string[] | No | Custom headers as `key=value` pairs. `In-Reply-To`, `References`, and `Reply-To` are reserved: Resend sets them, and passing any of them, in any letter case, returns an error. A header name cannot be empty, and names and values cannot contain line breaks or null characters |
 | `--idempotency-key <key>` | string | No | Deduplicate request |
 
-**Output:** `{"object":"inbox_draft","id":"<uuid>","thread_id":"<uuid>","email_id":"<uuid>"}`
+**Output:** `{"id":"<email-id>"}`, the ID of the sent email. Use it with `emails get`.
 
 ---
 
@@ -428,7 +477,7 @@ fields keep their current value.
 |------|------|-------------|
 | `--instructions <text>` | string | Instructions the agent follows (max 4000 chars). Pass `""` to clear them |
 | `--tone <tone>` | string | Tone the agent writes in, e.g. `friendly and concise` (max 64 chars). Pass `""` to clear it |
-| `--enabled_actions <actions...>` | string[] | Replaces the whole set (comma or space-separated). One or more of `draft_reply`, `forward_thread`, `add_labels`, `assign_thread`, `mark_as_spam`, `archive_thread`, `delete_thread`. Pass `""` to disable all actions |
+| `--enabled_actions <actions...>` | string[] | Replaces the whole set (comma or space-separated). Duplicates are removed. One or more of `draft_reply`, `forward_thread`, `add_labels`, `assign_thread`, `mark_as_spam`, `archive_thread`, `delete_thread`. Pass `""` to disable all actions |
 
 **Output:** `{"object":"inbox_agent","id":"<uuid>"}`
 

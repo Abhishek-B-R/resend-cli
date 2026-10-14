@@ -10,7 +10,10 @@ import { inboxPickerConfig } from './utils';
 export const updateInboxCommand = new Command('update')
   .description("Update an inbox's name or from name")
   .argument('[id]', 'Inbox UUID')
-  .option('--name <name>', 'New inbox name')
+  .option(
+    '--name <name>',
+    'New internal name for the inbox. Recipients do not see it',
+  )
   .option(
     '--from_name <name>',
     'New name used when sending from this inbox, e.g. "Ada from Support" (a plain name, not "Name <email>")',
@@ -35,7 +38,7 @@ To use a different address, create a new inbox.`,
     const globalOpts = cmd.optsWithGlobals() as GlobalOpts;
     const id = await pickId(idArg, inboxPickerConfig, globalOpts);
 
-    if (!opts.name && opts.from_name === undefined) {
+    if (opts.name === undefined && opts.from_name === undefined) {
       outputError(
         {
           message:
@@ -50,7 +53,7 @@ To use a different address, create a new inbox.`,
     // no_changes guard above guarantees but tsc cannot prove across the
     // conditional spreads.
     const payload = {
-      ...(opts.name && { name: opts.name }),
+      ...(opts.name !== undefined && { name: opts.name }),
       ...(opts.from_name !== undefined && { fromName: opts.from_name }),
     } as UpdateInboxOptions;
 

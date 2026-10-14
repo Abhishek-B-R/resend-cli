@@ -428,7 +428,7 @@ For example, you can:
 | Contact  | `contact.created`, `contact.updated`, `contact.deleted`, `contact.topics.updated`                                                                                                                        |
 | Domain   | `domain.created`, `domain.updated`, `domain.deleted`                                                                                                                                                     |
 | Topic    | `topic.created`, `topic.updated`, `topic.deleted`                                                                                                                                                        |
-| Inbox    | `inbox.created`, `inbox.updated`, `inbox.deleted`, `inbox.thread.created`, `inbox.email.received`, `inbox.email.sent`, `inbox.thread.folder.updated`, `inbox.thread.assigned`, `inbox.thread.unassigned`, `inbox.thread.labels.updated`, `inbox.draft.created`, `inbox.draft.updated`, `inbox.draft.sent`, `inbox.draft.deleted` (beta) |
+| Inbox    | `inbox.created`, `inbox.updated`, `inbox.deleted`, `inbox.thread.created`, `inbox.email.received`, `inbox.email.sent`, `inbox.thread.folder.updated`, `inbox.thread.assigned`, `inbox.thread.unassigned`, `inbox.thread.labels.updated`, `inbox.draft.created`, `inbox.draft.updated`, `inbox.draft.sent`, `inbox.draft.deleted` |
 
 Use `all` with `--events` to subscribe to every event.
 
@@ -608,6 +608,295 @@ resend webhooks events replay wh_abc123 msg_1srOrx2ZWZBpBUvZwXKQmoEYga2
 
 ---
 
+### Inboxes
+
+With the Resend CLI, you can manage inboxes. An inbox is an email address at one of your verified domains that sends and receives email. Received emails are grouped into threads inside the inbox.
+
+Inbox commands need a full-access API key.
+
+#### Subcommands
+
+- `list`
+- `create`
+- `get`
+- `update`
+- `delete`
+- `threads` (`list`, `search`, `get`, `update`, `delete`)
+- `threads emails` (`list`, `get`, `reply`, `forward`)
+- `labels` (`list`, `create`, `update`, `delete`)
+- `drafts` (`list`, `create`, `get`, `update`, `delete`, `send`)
+- `agent` (`get`, `update`)
+
+#### Aliases
+
+- `inboxes ls` → `list`
+- `inboxes rm` → `delete`
+- `ls` and `rm` also work on `threads`, `threads emails` (`ls` only), `labels`, and `drafts`
+
+Running a group with no subcommand runs its `list`, or `get` for `agent`. In a terminal, omit an ID to pick from a list.
+
+---
+
+#### **`resend inboxes list`**
+
+Lists the inboxes of the team, newest first. Takes `--limit`, `--after`, and `--before`, like `resend webhooks list`.
+
+```bash
+resend inboxes list
+resend inboxes list --limit 25 --json
+```
+
+#### **`resend inboxes create`**
+
+Creates an inbox at an address on one of your domains. Without `--forwarding`, the domain must have receiving enabled. With `--forwarding`, Resend generates a receiving address, so you can receive mail without an MX record.
+
+The output holds only `{"object":"inbox","id":"<uuid>"}`. Run `resend inboxes get <id>` to read the other fields, such as `receiving_address`.
+
+| Flag                        | Description                                                           |
+| --------------------------- | --------------------------------------------------------------------- |
+| `--email_address <address>` | Inbox address — **required** in non-interactive mode                  |
+| `--name <name>`             | Internal name, recipients do not see it                               |
+| `--from_name <name>`        | Name recipients see when mail is sent from the inbox                  |
+| `--forwarding`              | Receive mail without an MX record through a generated receiving address |
+
+```bash
+resend inboxes create --email_address support@yourdomain.com
+resend inboxes create --email_address hello@yourdomain.com --name "Hello" --forwarding
+```
+
+#### **`resend inboxes get`**
+
+Fetches one inbox by ID or by email address.
+
+```bash
+resend inboxes get 78261eea-8f8b-4381-83c6-79fa7120f1cf
+resend inboxes get support@yourdomain.com --json
+```
+
+#### **`resend inboxes update`**
+
+Updates the internal name or the from name. **At least one** of `--name` or `--from_name` is required. Pass `--from_name ""` to remove the from name.
+
+```bash
+resend inboxes update 78261eea-8f8b-4381-83c6-79fa7120f1cf --name "Support"
+resend inboxes update 78261eea-8f8b-4381-83c6-79fa7120f1cf --from_name "Ada from Support"
+```
+
+#### **`resend inboxes delete`**
+
+Deletes an inbox. In non-interactive mode, **`--yes` is required** to confirm.
+
+```bash
+resend inboxes delete 78261eea-8f8b-4381-83c6-79fa7120f1cf --yes
+```
+
+#### **`resend inboxes threads list`**
+
+Lists the threads in an inbox, most recently active first.
+
+| Flag                      | Description                                                                 |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `--inbox_id <id>`         | Inbox UUID                                                                  |
+| `--folders <folders...>`  | `inbox`, `archive`, `spam`, `sent`, `trash` (default `inbox`, or `inbox archive sent` with `--labels`) |
+| `--labels <label_ids...>` | Label UUIDs. Returns threads with any of them                               |
+| `--read` / `--unread`     | Only threads where every email is read, or with at least one unread email   |
+| `--limit`, `--after`, `--before` | Pagination, with thread IDs as cursors                               |
+
+```bash
+resend inboxes threads list --inbox_id <inbox_id>
+resend inboxes threads list --inbox_id <inbox_id> --folders inbox archive --unread --json
+```
+
+#### **`resend inboxes threads search`**
+
+Finds threads by the text of their emails, who sent or received them, attachments, and dates. Takes `--query`, `--from`, `--to`, `--cc`, `--bcc`, `--has_attachment`, `--without_attachment`, `--start_date`, and `--end_date`, plus the filters and pagination of `threads list`. Search can be up to about a minute behind new emails.
+
+```bash
+resend inboxes threads search --inbox_id <inbox_id> --query invoice
+resend inboxes threads search --inbox_id <inbox_id> --from isabella@example.com --has_attachment --start_date 2026-09-01 --json
+```
+
+#### **`resend inboxes threads get`**
+
+Fetches the summary of one thread. List its emails with `resend inboxes threads emails list`.
+
+```bash
+resend inboxes threads get --inbox_id <inbox_id> --thread_id <thread_id>
+```
+
+#### **`resend inboxes threads update`**
+
+Marks a thread read or unread, moves it to a folder, or adds and removes labels. **At least one** option is required.
+
+| Flag                                 | Description                                              |
+| ------------------------------------ | -------------------------------------------------------- |
+| `--read` / `--unread`                | Mark every email in the thread read or unread            |
+| `--folder <folder>`                  | `inbox`, `archive`, `spam`, or `trash`                   |
+| `--add_label_ids <label_ids...>`     | Label UUIDs to apply, 1 to 10                            |
+| `--remove_label_ids <label_ids...>`  | Label UUIDs to remove, 1 to 10                           |
+
+```bash
+resend inboxes threads update --inbox_id <inbox_id> --thread_id <thread_id> --read --folder archive
+resend inboxes threads update --inbox_id <inbox_id> --thread_id <thread_id> --add_label_ids <label_id>
+```
+
+#### **`resend inboxes threads delete`**
+
+Moves a thread to `trash` and schedules it for deletion in 30 days. To restore it, move it to another folder with `threads update --folder`. In non-interactive mode, **`--yes` is required**.
+
+```bash
+resend inboxes threads delete --inbox_id <inbox_id> --thread_id <thread_id> --yes
+```
+
+#### **`resend inboxes threads emails list`**
+
+Lists the emails of a thread, oldest first, with their bodies. Takes `--limit`, `--after`, and `--before`, with email IDs as cursors.
+
+```bash
+resend inboxes threads emails list --inbox_id <inbox_id> --thread_id <thread_id>
+```
+
+#### **`resend inboxes threads emails get`**
+
+Fetches one email of a thread.
+
+```bash
+resend inboxes threads emails get --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id>
+```
+
+#### **`resend inboxes threads emails reply`**
+
+Sends a reply from the inbox address. The reply goes to the `Reply-To` addresses of the email, or to its sender. If the inbox sent the email, the reply goes to its `to` recipients. `--reply-all` also copies the other recipients, without the inbox address and without duplicates. With `--reply-all`, a reply to an email the inbox sent goes to its `Reply-To` addresses when they are not the inbox address. **At least one** of `--text` or `--html` is required. The output holds the ID of the sent email.
+
+| Flag                        | Description                                                  |
+| --------------------------- | ------------------------------------------------------------ |
+| `--text <text>`             | Plain-text body                                              |
+| `--html <html>`             | HTML body                                                    |
+| `--cc`, `--bcc <address>`   | Extra recipients (repeat the flag for more)                  |
+| `--subject <subject>`       | Override the subject                                         |
+| `--reply-all`               | Reply to everyone on the original email                      |
+| `--attachment <specs...>`   | File path or URL to attach, as on `resend emails send`       |
+| `--attachments-file <path>` | JSON array of attachment objects                             |
+| `--headers <key=value...>`  | Custom headers. `In-Reply-To`, `References` and `Reply-To` are reserved. Names and values cannot contain line breaks |
+| `--idempotency-key <key>`   | Deduplicate the send                                         |
+
+```bash
+resend inboxes threads emails reply --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --text "Thanks!"
+resend inboxes threads emails reply --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --text "Invoice attached." --attachment ./invoice.pdf
+```
+
+#### **`resend inboxes threads emails forward`**
+
+Forwards an email from the inbox address. **`--to` is required.** The attachments of the original email are sent with the forward. An original attachment that was sent from a URL cannot be forwarded. Takes `--cc`, `--bcc`, `--text`, `--html`, `--subject`, `--attachment`, `--attachments-file`, `--headers`, and `--idempotency-key`. The output holds the ID of the sent email.
+
+```bash
+resend inboxes threads emails forward --inbox_id <inbox_id> --thread_id <thread_id> --email_id <email_id> --to teammate@example.com --text "FYI"
+```
+
+#### **`resend inboxes labels list`**
+
+Lists every label of an inbox, oldest first. The list is not paginated.
+
+```bash
+resend inboxes labels list --inbox_id <inbox_id>
+```
+
+#### **`resend inboxes labels create`**
+
+Creates a label. **`--name` is required.** `--color` takes a `#RRGGBB` hex color, random when omitted. Quote it so the shell keeps the `#`.
+
+```bash
+resend inboxes labels create --inbox_id <inbox_id> --name "Urgent" --color '#E93D82'
+```
+
+#### **`resend inboxes labels update`**
+
+Renames or recolors a label. **At least one** of `--name` or `--color` is required.
+
+```bash
+resend inboxes labels update --inbox_id <inbox_id> --label_id <label_id> --name "Billing"
+```
+
+#### **`resend inboxes labels delete`**
+
+Deletes a label and removes it from every thread. In non-interactive mode, **`--yes` is required**.
+
+```bash
+resend inboxes labels delete --inbox_id <inbox_id> --label_id <label_id> --yes
+```
+
+#### **`resend inboxes drafts list`**
+
+Lists the unsent drafts of an inbox, most recently updated first. Takes `--limit`, `--after`, and `--before`.
+
+```bash
+resend inboxes drafts list --inbox_id <inbox_id>
+```
+
+#### **`resend inboxes drafts create`**
+
+Creates a draft that starts a new thread. Pass `--thread_id` and `--reply_to_email_id` together for a reply draft. Takes `--to`, `--cc`, `--bcc`, `--subject`, `--text`, `--html`, `--attachment`, and `--attachments-file`. **At least one** of them is required. `--idempotency-key` deduplicates the request.
+
+Draft attachments need `content`, `filename`, and `content_type`, so `--attachment` takes a local file with `;type=<MIME type>`. The files on a draft can total at most 25 MB.
+
+```bash
+resend inboxes drafts create --inbox_id <inbox_id> --to user@example.com --subject "Hello" --text "Draft body"
+resend inboxes drafts create --inbox_id <inbox_id> --thread_id <thread_id> --reply_to_email_id <email_id> --text "Reply draft"
+resend inboxes drafts create --inbox_id <inbox_id> --to user@example.com --text "Report attached" --attachment "./report.pdf;type=application/pdf"
+```
+
+#### **`resend inboxes drafts get`**
+
+Fetches one draft with its full body.
+
+```bash
+resend inboxes drafts get --inbox_id <inbox_id> --draft_id <draft_id>
+```
+
+#### **`resend inboxes drafts update`**
+
+Updates the recipients, subject, body, or attachments of an unsent draft. Setting `--text` or `--html` replaces the whole body. `--attachment` and `--attachments-file` replace every attachment on the draft, and `--clear-attachments` removes them all.
+
+```bash
+resend inboxes drafts update --inbox_id <inbox_id> --draft_id <draft_id> --subject "Updated subject"
+resend inboxes drafts update --inbox_id <inbox_id> --draft_id <draft_id> --clear-attachments
+```
+
+#### **`resend inboxes drafts delete`**
+
+Discards an unsent draft. In non-interactive mode, **`--yes` is required**.
+
+```bash
+resend inboxes drafts delete --inbox_id <inbox_id> --draft_id <draft_id> --yes
+```
+
+#### **`resend inboxes drafts send`**
+
+Sends a draft from the inbox address. The draft needs at least one `to` recipient, a non-empty subject, and `html` or `text`. A reply draft created without `--subject` has an empty subject, so set one before you send it. `--headers` adds custom headers, except the reserved `In-Reply-To`, `References` and `Reply-To`. `--idempotency-key` deduplicates the send. The output holds the ID of the sent email.
+
+```bash
+resend inboxes drafts send --inbox_id <inbox_id> --draft_id <draft_id>
+```
+
+#### **`resend inboxes agent get`**
+
+Fetches the agent settings of an inbox: `instructions`, `tone`, and `enabled_actions`.
+
+```bash
+resend inboxes agent get --inbox_id <inbox_id>
+```
+
+#### **`resend inboxes agent update`**
+
+Updates the agent settings. **At least one** of `--instructions`, `--tone`, or `--enabled_actions` is required. Omitted fields keep their current value. `--enabled_actions` replaces the whole set.
+
+```bash
+resend inboxes agent update --inbox_id <inbox_id> --tone "friendly and concise"
+resend inboxes agent update --inbox_id <inbox_id> --enabled_actions draft_reply add_labels
+```
+
+---
+
 ## Global options
 
 These flags work on every command and are passed before the subcommand:
@@ -694,12 +983,13 @@ Prints the CLI command tree as JSON for scripting and AI agents. In an interacti
 
 ## Dry-run (no API call)
 
-`--dry-run` is only implemented where agents most often need to **validate a complex payload** before a high-impact send:
+`--dry-run` validates a payload and prints it without calling the API. These commands support it:
 
 - **`resend emails send ... --dry-run`** — validates inputs and prints `{ "dryRun": true, "request": { ... } }` without sending. Attachments appear as `filename` and `byteLength` only.
 - **`resend broadcasts create ... --dry-run`** — same for the broadcast create payload.
+- **`resend emails batch --file ./emails.json --dry-run`** — parses and normalises the JSON array, resolves any `--react-email` template, then prints the request payload without sending. No API key required.
 
-Other write commands (batch, `broadcasts send`, webhooks, contacts, etc.) do not support `--dry-run` yet. If that would help your workflow, open an issue — likely next candidates are **`emails batch`** (large JSON files) and **`broadcasts send`** (confirm id + schedule before delivery).
+Other commands do not support `--dry-run`.
 
 ---
 

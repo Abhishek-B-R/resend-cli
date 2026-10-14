@@ -13,7 +13,7 @@ metadata:
   author: resend
   # Skill version is independent from the CLI/package.json version —
   # bump it on skill content changes, not CLI releases.
-  version: "2.20.0"
+  version: "2.21.0"
   homepage: https://resend.com/docs/cli-agents
   source: https://github.com/resend/resend-cli
   openclaw:
@@ -135,9 +135,10 @@ Auth resolves: `RESEND_API_KEY` env > config file (`resend login --key`). Use `-
 | `emails receiving` | list, get, attachments, forward, listen |
 | `domains` | create, verify, get, claim, update, delete, list |
 | `logs` | list, get, open |
+| `usage` | Show account-level usage and quota limits (emails, contacts, segments, broadcasts, AI credits, automation runs, domains, rate limit) |
 | `careers` | list, apply — browse open positions at Resend and apply |
 | `suppressions` _(beta)_ | list, add, get, delete, batch — requires account enrollment |
-| `inboxes` _(beta)_ | create, list, get, update, delete, threads (list, search, get, update, delete, emails list/get/reply/forward), labels, drafts, agent — requires account enrollment |
+| `inboxes` | create, list, get, update, delete, threads (list, search, get, update, delete), threads emails (list, get, reply, forward), labels (list, create, update, delete), drafts (list, create, get, update, delete, send), agent (get, update) |
 | `api-keys` | create, list, update, delete |
 | `automations` | create, get, list, update, delete, duplicate, stop, open, runs |
 | `events` | create, get, list, update, delete, send, open |
@@ -153,7 +154,7 @@ Auth resolves: `RESEND_API_KEY` env > config file (`resend login --key`). Use `-
 
 Read the matching reference file for detailed flags and output shapes.
 
-**Dry-run:** Only `emails send` and `broadcasts create` support `--dry-run` (payload validation before send/create). They print `{ "dryRun": true, "request": { ... } }` on stdout without calling the API. There is no `--dry-run` on `emails batch`, `broadcasts send`, or other commands yet.
+**Dry-run:** `emails send`, `broadcasts create`, and `emails batch` support `--dry-run` (payload validation before send/create). They print `{ "dryRun": true, "request": { ... } }` on stdout without calling the API. Other commands do not support `--dry-run`.
 
 ## Common Mistakes
 
@@ -223,7 +224,7 @@ resend doctor -q
 - **Viewing API request logs** → [references/logs.md](references/logs.md)
 - **Browsing or applying to jobs at Resend** → [references/careers.md](references/careers.md)
 - **Managing the suppression list** (beta) → [references/suppressions.md](references/suppressions.md)
-- **Managing inboxes and received email** (beta) → [references/inboxes.md](references/inboxes.md)
+- **Managing inboxes and received email** → [references/inboxes.md](references/inboxes.md)
 - **Creating automations or sending events** → [references/automations.md](references/automations.md)
 - **Setting up webhooks or listening for events** → [references/webhooks.md](references/webhooks.md)
 - **Auth, profiles, or health checks** → [references/auth.md](references/auth.md)
