@@ -73,6 +73,49 @@ describe('inboxes threads emails get command', () => {
 
     await getInboxThreadEmailCommand.parseAsync(
       [
+        '--inbox-id',
+        INBOX_ID,
+        '--thread-id',
+        THREAD_ID,
+        '--email-id',
+        EMAIL_ID,
+      ],
+      { from: 'user' },
+    );
+
+    expect(mockGet.mock.calls[0][0]).toStrictEqual({
+      inboxId: INBOX_ID,
+      threadId: THREAD_ID,
+      emailId: EMAIL_ID,
+    });
+    const output = spies.logSpy.mock.calls[0][0] as string;
+    const parsed = JSON.parse(output);
+    expect(parsed.id).toBe(EMAIL_ID);
+    expect(parsed.text).toBe('Was I charged twice?');
+  });
+
+  it('takes the IDs as positional arguments', async () => {
+    spies = setupOutputSpies();
+
+    await getInboxThreadEmailCommand.parseAsync(
+      [INBOX_ID, THREAD_ID, EMAIL_ID],
+      {
+        from: 'user',
+      },
+    );
+
+    expect(mockGet.mock.calls[0][0]).toStrictEqual({
+      inboxId: INBOX_ID,
+      threadId: THREAD_ID,
+      emailId: EMAIL_ID,
+    });
+  });
+
+  it('accepts the snake_case ID flags', async () => {
+    spies = setupOutputSpies();
+
+    await getInboxThreadEmailCommand.parseAsync(
+      [
         '--inbox_id',
         INBOX_ID,
         '--thread_id',
@@ -83,15 +126,11 @@ describe('inboxes threads emails get command', () => {
       { from: 'user' },
     );
 
-    expect(mockGet).toHaveBeenCalledWith({
+    expect(mockGet.mock.calls[0][0]).toStrictEqual({
       inboxId: INBOX_ID,
       threadId: THREAD_ID,
       emailId: EMAIL_ID,
     });
-    const output = spies.logSpy.mock.calls[0][0] as string;
-    const parsed = JSON.parse(output);
-    expect(parsed.id).toBe(EMAIL_ID);
-    expect(parsed.text).toBe('Was I charged twice?');
   });
 
   it('errors with fetch_error when SDK returns an error', async () => {
@@ -105,11 +144,11 @@ describe('inboxes threads emails get command', () => {
     await expectExit1(() =>
       getInboxThreadEmailCommand.parseAsync(
         [
-          '--inbox_id',
+          '--inbox-id',
           INBOX_ID,
-          '--thread_id',
+          '--thread-id',
           THREAD_ID,
-          '--email_id',
+          '--email-id',
           EMAIL_ID,
         ],
         {
@@ -120,5 +159,47 @@ describe('inboxes threads emails get command', () => {
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
     expect(output).toContain('fetch_error');
+  });
+
+  it('shows a notice instead of raw markup for an HTML-only email', async () => {
+    mockGet.mockResolvedValueOnce({
+      data: { ...(await mockGet()).data, text: null, html: '<p>Hi</p>' },
+      error: null,
+    } as never);
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: true,
+      writable: true,
+    });
+    Object.defineProperty(process.stdout, 'isTTY', {
+      value: true,
+      writable: true,
+    });
+    delete process.env.CI;
+    delete process.env.GITHUB_ACTIONS;
+    delete process.env.TERM;
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const stderrSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation(() => true);
+
+    try {
+      await getInboxThreadEmailCommand.parseAsync(
+        [
+          '--inbox-id',
+          INBOX_ID,
+          '--thread-id',
+          THREAD_ID,
+          '--email-id',
+          EMAIL_ID,
+        ],
+        { from: 'user' },
+      );
+      const lines = logSpy.mock.calls.map((c) => c[0]);
+      expect(lines).toContain('(HTML body only. Use --json to view it.)');
+      expect(lines).not.toContain('<p>Hi</p>');
+    } finally {
+      logSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
   });
 });

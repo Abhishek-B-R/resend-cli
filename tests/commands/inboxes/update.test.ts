@@ -60,10 +60,25 @@ describe('inboxes update command', () => {
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate.mock.calls[0][0]).toBe(INBOX_ID);
-    expect(mockUpdate.mock.calls[0][1]).toEqual({ name: 'Support' });
+    expect(mockUpdate.mock.calls[0][1]).toStrictEqual({ name: 'Support' });
   });
 
-  it('updates the from name with --from_name', async () => {
+  it('updates the from name with --from-name', async () => {
+    spies = setupOutputSpies();
+
+    await updateInboxCommand.parseAsync(
+      [INBOX_ID, '--from-name', 'Ada from Support'],
+      { from: 'user' },
+    );
+
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate.mock.calls[0][0]).toBe(INBOX_ID);
+    expect(mockUpdate.mock.calls[0][1]).toStrictEqual({
+      fromName: 'Ada from Support',
+    });
+  });
+
+  it('accepts the snake_case --from_name flag', async () => {
     spies = setupOutputSpies();
 
     await updateInboxCommand.parseAsync(
@@ -72,20 +87,22 @@ describe('inboxes update command', () => {
     );
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0][1]).toEqual({
+    expect(mockUpdate.mock.calls[0][0]).toBe(INBOX_ID);
+    expect(mockUpdate.mock.calls[0][1]).toStrictEqual({
       fromName: 'Ada from Support',
     });
   });
 
-  it('clears the from name with an empty --from_name', async () => {
+  it('clears the from name with an empty --from-name', async () => {
     spies = setupOutputSpies();
 
-    await updateInboxCommand.parseAsync([INBOX_ID, '--from_name', ''], {
+    await updateInboxCommand.parseAsync([INBOX_ID, '--from-name', ''], {
       from: 'user',
     });
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0][1]).toEqual({ fromName: '' });
+    expect(mockUpdate.mock.calls[0][0]).toBe(INBOX_ID);
+    expect(mockUpdate.mock.calls[0][1]).toStrictEqual({ fromName: '' });
   });
 
   it('outputs JSON result when non-interactive', async () => {
@@ -130,5 +147,19 @@ describe('inboxes update command', () => {
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
     expect(output).toContain('update_error');
+  });
+
+  it('errors with no_changes before it asks for an inbox ID', async () => {
+    setNonInteractive();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    exitSpy = mockExitThrow();
+
+    await expectExit1(() =>
+      updateInboxCommand.parseAsync([], { from: 'user' }),
+    );
+
+    const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
+    expect(output).toContain('no_changes');
+    expect(output).not.toContain('missing_id');
   });
 });
