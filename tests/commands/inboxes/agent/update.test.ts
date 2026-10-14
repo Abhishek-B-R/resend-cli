@@ -80,14 +80,15 @@ describe('inboxes agent update command', () => {
   it('accepts the inbox ID as an argument', async () => {
     setupOutputSpies();
 
-    await updateInboxAgentCommand.parseAsync([INBOX_ID, '--tone', 'calm'], {
-      from: 'user',
-    });
+    await updateInboxAgentCommand.parseAsync(
+      [INBOX_ID, '--tone', 'concise_casual'],
+      { from: 'user' },
+    );
 
     expect(mockUpdate).toHaveBeenCalledTimes(1);
     expect(mockUpdate.mock.calls[0][0]).toStrictEqual({
       inboxId: INBOX_ID,
-      tone: 'calm',
+      tone: 'concise_casual',
     });
   });
 
@@ -137,6 +138,23 @@ describe('inboxes agent update command', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it('errors with invalid_tone for text that is not a preset', async () => {
+    setNonInteractive();
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    exitSpy = mockExitThrow();
+
+    await expectExit1(() =>
+      updateInboxAgentCommand.parseAsync(
+        ['--inbox-id', INBOX_ID, '--tone', 'friendly and concise'],
+        { from: 'user' },
+      ),
+    );
+
+    const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
+    expect(output).toContain('invalid_tone');
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it('errors with invalid_enabled_actions for an unknown action', async () => {
     setNonInteractive();
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -158,7 +176,7 @@ describe('inboxes agent update command', () => {
     setNonInteractive();
     mockUpdate.mockResolvedValueOnce(
       mockSdkError(
-        'The tone must be 64 characters or less.',
+        'The instructions must be 4000 characters or less.',
         'validation_error',
       ) as never,
     );
@@ -167,7 +185,7 @@ describe('inboxes agent update command', () => {
 
     await expectExit1(() =>
       updateInboxAgentCommand.parseAsync(
-        ['--inbox-id', INBOX_ID, '--tone', 'calm'],
+        ['--inbox-id', INBOX_ID, '--instructions', 'x'.repeat(4001)],
         { from: 'user' },
       ),
     );

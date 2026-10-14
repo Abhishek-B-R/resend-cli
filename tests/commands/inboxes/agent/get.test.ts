@@ -23,7 +23,7 @@ const mockGet = vi.fn(async () => ({
   data: {
     object: 'inbox_agent' as const,
     instructions: 'Answer refund questions yourself.',
-    tone: 'friendly and concise',
+    tone: 'concise_professional',
     enabled_actions: ['draft_reply' as const],
   },
   error: null,

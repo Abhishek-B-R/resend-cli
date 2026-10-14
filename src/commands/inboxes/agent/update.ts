@@ -12,6 +12,13 @@ import { pickId } from '../../../lib/prompts';
 import { snakeCaseAlias } from '../../../lib/snake-case-alias';
 import { inboxPickerConfig, resolveIdInputs } from '../utils';
 
+const INBOX_AGENT_TONES = [
+  'concise_professional',
+  'concise_casual',
+  'expanded_professional',
+  'expanded_casual',
+] as const;
+
 export const updateInboxAgentCommand = new Command('update')
   .description("Update an inbox's agent instructions, tone, or enabled actions")
   .argument('[inboxId]', 'Inbox UUID')
@@ -23,7 +30,7 @@ export const updateInboxAgentCommand = new Command('update')
   )
   .option(
     '--tone <tone>',
-    'Tone preset or custom text the agent writes in (max 64 characters)',
+    `Tone the agent writes in: ${INBOX_AGENT_TONES.join(', ')}`,
   )
   .option(
     '--enabled-actions <actions...>',
@@ -35,14 +42,14 @@ export const updateInboxAgentCommand = new Command('update')
     buildHelpText({
       context: `At least one of --instructions, --tone, or --enabled-actions is required.
 Omitted fields keep their current value.
---tone takes a preset (concise_professional, concise_casual, expanded_professional, expanded_casual)
-or custom text in your own words, such as "friendly and concise".
+--tone takes one of ${INBOX_AGENT_TONES.join(', ')}.
 Pass --instructions "" or --tone "" to clear the value.
 --enabled-actions replaces the whole set. Duplicates are removed. Pass --enabled-actions "" to disable all actions.`,
       output: `  {"object":"inbox_agent","id":"<uuid>"}`,
       errorCodes: [
         'auth_error',
         'no_changes',
+        'invalid_tone',
         'invalid_enabled_actions',
         'update_error',
       ],
@@ -67,6 +74,19 @@ Pass --instructions "" or --tone "" to clear the value.
           message:
             'Provide at least one option to update: --instructions, --tone, or --enabled-actions.',
           code: 'no_changes',
+        },
+        { json: globalOpts.json },
+      );
+    }
+
+    if (
+      opts.tone &&
+      !(INBOX_AGENT_TONES as readonly string[]).includes(opts.tone)
+    ) {
+      outputError(
+        {
+          message: `Invalid --tone value: ${opts.tone}. Use: ${INBOX_AGENT_TONES.join(', ')}.`,
+          code: 'invalid_tone',
         },
         { json: globalOpts.json },
       );
