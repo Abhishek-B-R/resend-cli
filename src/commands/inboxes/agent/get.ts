@@ -1,10 +1,20 @@
 import { Command } from '@commander-js/extra-typings';
+import type { InboxAgentAction } from 'resend';
 import { runGet } from '../../../lib/actions';
 import type { GlobalOpts } from '../../../lib/client';
 import { buildHelpText } from '../../../lib/help-text';
 import { pickId } from '../../../lib/prompts';
 import { snakeCaseAlias } from '../../../lib/snake-case-alias';
-import { inboxPickerConfig, resolveIdInputs } from '../utils';
+import { inboxAgentPath, inboxPickerConfig, resolveIdInputs } from '../utils';
+
+// The SDK still reads enabled_actions for the inbox agent, so this command
+// calls the endpoint directly until it ships the actions field
+interface InboxAgentSettings {
+  object: 'inbox_agent';
+  instructions: string | null;
+  tone: string | null;
+  actions: InboxAgentAction[];
+}
 
 export const getInboxAgentCommand = new Command('get')
   .description("Retrieve an inbox's agent settings")
@@ -15,7 +25,7 @@ export const getInboxAgentCommand = new Command('get')
     'after',
     buildHelpText({
       context: 'An inbox without a configured agent returns empty settings.',
-      output: `  {"object":"inbox_agent","instructions":"<text>|null","tone":"<tone>|null","enabled_actions":["draft_reply"]}`,
+      output: `  {"object":"inbox_agent","instructions":"<text>|null","tone":"<tone>|null","actions":["draft_reply"]}`,
       errorCodes: ['auth_error', 'fetch_error'],
       examples: [
         'resend inboxes agent get <inbox-id>',
@@ -33,13 +43,12 @@ export const getInboxAgentCommand = new Command('get')
     await runGet(
       {
         loading: 'Fetching agent settings...',
-        sdkCall: (resend) => resend.inboxes.agent.get({ inboxId }),
+        sdkCall: (resend) =>
+          resend.get<InboxAgentSettings>(inboxAgentPath(inboxId)),
         onInteractive: (data) => {
           console.log(`Instructions: ${data.instructions || '(none)'}`);
           console.log(`Tone: ${data.tone || '(none)'}`);
-          console.log(
-            `Enabled actions: ${data.enabled_actions.join(', ') || '(none)'}`,
-          );
+          console.log(`Actions: ${data.actions.join(', ') || '(none)'}`);
         },
       },
       globalOpts,

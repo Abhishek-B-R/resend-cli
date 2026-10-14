@@ -19,8 +19,9 @@ import {
 
 const INBOX_ID = '78261eea-8f8b-4381-83c6-79fa7120f1cf';
 const AGENT_ID = 'a1f84a4e-6f2b-4f0a-9c1d-8a2e5b3c7d90';
+const AGENT_PATH = `/inboxes/${INBOX_ID}/agent`;
 
-const mockUpdate = vi.fn(async () => ({
+const mockPatch = vi.fn(async () => ({
   data: { object: 'inbox_agent' as const, id: AGENT_ID },
   error: null,
 }));
@@ -31,7 +32,7 @@ vi.mock('resend', async (importOriginal) => {
     INBOX_AGENT_ACTIONS: original.INBOX_AGENT_ACTIONS,
     Resend: class MockResend {
       constructor(public key: string) {}
-      inboxes = { agent: { update: mockUpdate } };
+      patch = mockPatch;
     },
   };
 });
@@ -43,7 +44,7 @@ describe('inboxes agent update command', () => {
 
   beforeEach(() => {
     process.env.RESEND_API_KEY = 're_test_key';
-    mockUpdate.mockClear();
+    mockPatch.mockClear();
   });
 
   afterEach(() => {
@@ -54,7 +55,7 @@ describe('inboxes agent update command', () => {
     exitSpy = undefined;
   });
 
-  it('updates instructions and enabled actions', async () => {
+  it('updates instructions and actions', async () => {
     setupOutputSpies();
 
     await updateInboxAgentCommand.parseAsync(
@@ -63,17 +64,16 @@ describe('inboxes agent update command', () => {
         INBOX_ID,
         '--instructions',
         'Answer refund questions yourself.',
-        '--enabled-actions',
+        '--actions',
         'draft_reply,add_labels',
         'archive_thread',
       ],
       { from: 'user' },
     );
 
-    expect(mockUpdate.mock.calls[0][0]).toStrictEqual({
-      inboxId: INBOX_ID,
+    expect(mockPatch).toHaveBeenCalledWith(AGENT_PATH, {
       instructions: 'Answer refund questions yourself.',
-      enabledActions: ['draft_reply', 'add_labels', 'archive_thread'],
+      actions: ['draft_reply', 'add_labels', 'archive_thread'],
     });
   });
 
@@ -84,40 +84,35 @@ describe('inboxes agent update command', () => {
       from: 'user',
     });
 
-    expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0][0]).toStrictEqual({
-      inboxId: INBOX_ID,
-      tone: 'calm',
-    });
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+    expect(mockPatch).toHaveBeenCalledWith(AGENT_PATH, { tone: 'calm' });
   });
 
-  it('accepts the snake_case --inbox_id and --enabled_actions flags', async () => {
+  it('accepts the snake_case --inbox_id flag', async () => {
     setupOutputSpies();
 
     await updateInboxAgentCommand.parseAsync(
-      ['--inbox_id', INBOX_ID, '--enabled_actions', 'draft_reply,add_labels'],
+      ['--inbox_id', INBOX_ID, '--actions', 'draft_reply,add_labels'],
       { from: 'user' },
     );
 
-    expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0][0]).toStrictEqual({
-      inboxId: INBOX_ID,
-      enabledActions: ['draft_reply', 'add_labels'],
+    expect(mockPatch).toHaveBeenCalledTimes(1);
+    expect(mockPatch).toHaveBeenCalledWith(AGENT_PATH, {
+      actions: ['draft_reply', 'add_labels'],
     });
   });
 
-  it('sends null for an empty --tone and an empty list for --enabled-actions ""', async () => {
+  it('sends null for an empty --tone and an empty list for --actions ""', async () => {
     setupOutputSpies();
 
     await updateInboxAgentCommand.parseAsync(
-      ['--inbox-id', INBOX_ID, '--tone', '', '--enabled-actions', ''],
+      ['--inbox-id', INBOX_ID, '--tone', '', '--actions', ''],
       { from: 'user' },
     );
 
-    expect(mockUpdate.mock.calls[0][0]).toStrictEqual({
-      inboxId: INBOX_ID,
+    expect(mockPatch).toHaveBeenCalledWith(AGENT_PATH, {
       tone: null,
-      enabledActions: [],
+      actions: [],
     });
   });
 
@@ -134,29 +129,29 @@ describe('inboxes agent update command', () => {
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
     expect(output).toContain('no_changes');
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockPatch).not.toHaveBeenCalled();
   });
 
-  it('errors with invalid_enabled_actions for an unknown action', async () => {
+  it('errors with invalid_actions for an unknown action', async () => {
     setNonInteractive();
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     exitSpy = mockExitThrow();
 
     await expectExit1(() =>
       updateInboxAgentCommand.parseAsync(
-        ['--inbox-id', INBOX_ID, '--enabled-actions', 'reply'],
+        ['--inbox-id', INBOX_ID, '--actions', 'reply'],
         { from: 'user' },
       ),
     );
 
     const output = errorSpy.mock.calls.map((c) => c[0]).join(' ');
-    expect(output).toContain('invalid_enabled_actions');
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(output).toContain('invalid_actions');
+    expect(mockPatch).not.toHaveBeenCalled();
   });
 
   it('errors with update_error when SDK returns an error', async () => {
     setNonInteractive();
-    mockUpdate.mockResolvedValueOnce(
+    mockPatch.mockResolvedValueOnce(
       mockSdkError(
         'The tone must be 64 characters or less.',
         'validation_error',

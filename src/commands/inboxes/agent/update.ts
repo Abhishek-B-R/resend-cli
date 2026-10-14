@@ -1,19 +1,28 @@
 import { Command } from '@commander-js/extra-typings';
-import {
-  INBOX_AGENT_ACTIONS,
-  type InboxAgentAction,
-  type UpdateInboxAgentOptions,
-} from 'resend';
+import { INBOX_AGENT_ACTIONS, type InboxAgentAction } from 'resend';
 import { runWrite } from '../../../lib/actions';
 import type { GlobalOpts } from '../../../lib/client';
 import { buildHelpText } from '../../../lib/help-text';
 import { outputError } from '../../../lib/output';
 import { pickId } from '../../../lib/prompts';
 import { snakeCaseAlias } from '../../../lib/snake-case-alias';
-import { inboxPickerConfig, resolveIdInputs } from '../utils';
+import { inboxAgentPath, inboxPickerConfig, resolveIdInputs } from '../utils';
+
+// The SDK still sends enabled_actions for the inbox agent, so this command
+// calls the endpoint directly until it ships the actions field
+interface UpdateInboxAgentSettings {
+  instructions?: string | null;
+  tone?: string | null;
+  actions?: InboxAgentAction[];
+}
+
+interface UpdateInboxAgentResult {
+  object: 'inbox_agent';
+  id: string;
+}
 
 export const updateInboxAgentCommand = new Command('update')
-  .description("Update an inbox's agent instructions, tone, or enabled actions")
+  .description("Update an inbox's agent instructions, tone, or actions")
   .argument('[inboxId]', 'Inbox UUID')
   .option('--inbox-id <id>', 'Inbox UUID')
   .addOption(snakeCaseAlias('--inbox-id <id>'))
@@ -26,29 +35,28 @@ export const updateInboxAgentCommand = new Command('update')
     'Tone preset or custom text the agent writes in (max 64 characters)',
   )
   .option(
-    '--enabled-actions <actions...>',
-    `Replace the enabled actions (comma or space-separated): ${INBOX_AGENT_ACTIONS.join(', ')}`,
+    '--actions <actions...>',
+    `Replace the allowed actions (comma or space-separated): ${INBOX_AGENT_ACTIONS.join(', ')}`,
   )
-  .addOption(snakeCaseAlias('--enabled-actions <actions...>'))
   .addHelpText(
     'after',
     buildHelpText({
-      context: `At least one of --instructions, --tone, or --enabled-actions is required.
+      context: `At least one of --instructions, --tone, or --actions is required.
 Omitted fields keep their current value.
 --tone takes a preset (concise_professional, concise_casual, expanded_professional, expanded_casual)
 or custom text in your own words, such as "friendly and concise".
 Pass --instructions "" or --tone "" to clear the value.
---enabled-actions replaces the whole set. Duplicates are removed. Pass --enabled-actions "" to disable all actions.`,
+--actions replaces the whole set. Duplicates are removed. Pass --actions "" to disable all actions.`,
       output: `  {"object":"inbox_agent","id":"<uuid>"}`,
       errorCodes: [
         'auth_error',
         'no_changes',
-        'invalid_enabled_actions',
+        'invalid_actions',
         'update_error',
       ],
       examples: [
         'resend inboxes agent update <inbox-id> --instructions "Answer refund questions yourself."',
-        'resend inboxes agent update <inbox-id> --enabled-actions draft_reply add_labels --json',
+        'resend inboxes agent update <inbox-id> --actions draft_reply add_labels --json',
         'resend inboxes agent update <inbox-id> --tone concise_professional',
         'resend inboxes agent update <inbox-id> --tone ""',
       ],
@@ -60,30 +68,30 @@ Pass --instructions "" or --tone "" to clear the value.
     if (
       opts.instructions === undefined &&
       opts.tone === undefined &&
-      opts.enabledActions === undefined
+      opts.actions === undefined
     ) {
       outputError(
         {
           message:
-            'Provide at least one option to update: --instructions, --tone, or --enabled-actions.',
+            'Provide at least one option to update: --instructions, --tone, or --actions.',
           code: 'no_changes',
         },
         { json: globalOpts.json },
       );
     }
 
-    const enabledActions = opts.enabledActions
+    const actions = opts.actions
       ?.flatMap((a) => a.split(','))
       .map((a) => a.trim())
       .filter(Boolean);
-    const invalid = enabledActions?.filter(
+    const invalid = actions?.filter(
       (a) => !(INBOX_AGENT_ACTIONS as readonly string[]).includes(a),
     );
     if (invalid?.length) {
       outputError(
         {
-          message: `Invalid --enabled-actions value: ${invalid.join(', ')}. Use: ${INBOX_AGENT_ACTIONS.join(', ')}.`,
-          code: 'invalid_enabled_actions',
+          message: `Invalid --actions value: ${invalid.join(', ')}. Use: ${INBOX_AGENT_ACTIONS.join(', ')}.`,
+          code: 'invalid_actions',
         },
         { json: globalOpts.json },
       );
@@ -95,22 +103,22 @@ Pass --instructions "" or --tone "" to clear the value.
     );
     const inboxId = await pickId(ids.inbox, inboxPickerConfig, globalOpts);
 
-    // The no_changes guard ensures one field is set; tsc cannot prove it.
-    const payload = {
-      inboxId,
+    const settings: UpdateInboxAgentSettings = {
       ...(opts.instructions !== undefined && {
         instructions: opts.instructions || null,
       }),
       ...(opts.tone !== undefined && { tone: opts.tone || null }),
-      ...(enabledActions && {
-        enabledActions: enabledActions as InboxAgentAction[],
-      }),
-    } as UpdateInboxAgentOptions;
+      ...(actions && { actions: actions as InboxAgentAction[] }),
+    };
 
     await runWrite(
       {
         loading: 'Updating agent settings...',
-        sdkCall: (resend) => resend.inboxes.agent.update(payload),
+        sdkCall: (resend) =>
+          resend.patch<UpdateInboxAgentResult>(
+            inboxAgentPath(inboxId),
+            settings,
+          ),
         errorCode: 'update_error',
         successMsg: `Agent settings updated for inbox: ${inboxId}`,
       },

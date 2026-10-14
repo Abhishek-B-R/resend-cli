@@ -18,13 +18,14 @@ import {
 } from '../../../helpers';
 
 const INBOX_ID = '78261eea-8f8b-4381-83c6-79fa7120f1cf';
+const AGENT_PATH = `/inboxes/${INBOX_ID}/agent`;
 
 const mockGet = vi.fn(async () => ({
   data: {
     object: 'inbox_agent' as const,
     instructions: 'Answer refund questions yourself.',
     tone: 'friendly and concise',
-    enabled_actions: ['draft_reply' as const],
+    actions: ['draft_reply' as const],
   },
   error: null,
 }));
@@ -32,7 +33,7 @@ const mockGet = vi.fn(async () => ({
 vi.mock('resend', () => ({
   Resend: class MockResend {
     constructor(public key: string) {}
-    inboxes = { agent: { get: mockGet } };
+    get = mockGet;
   },
 }));
 
@@ -61,10 +62,11 @@ describe('inboxes agent get command', () => {
       from: 'user',
     });
 
-    expect(mockGet.mock.calls[0][0]).toStrictEqual({ inboxId: INBOX_ID });
+    expect(mockGet).toHaveBeenCalledWith(AGENT_PATH);
     const parsed = JSON.parse(spies.logSpy.mock.calls[0][0] as string);
     expect(parsed.object).toBe('inbox_agent');
-    expect(parsed.enabled_actions).toEqual(['draft_reply']);
+    expect(parsed.actions).toEqual(['draft_reply']);
+    expect(parsed).not.toHaveProperty('enabled_actions');
   });
 
   it('accepts the inbox ID as an argument', async () => {
@@ -73,7 +75,7 @@ describe('inboxes agent get command', () => {
     await getInboxAgentCommand.parseAsync([INBOX_ID], { from: 'user' });
 
     expect(mockGet).toHaveBeenCalledTimes(1);
-    expect(mockGet.mock.calls[0][0]).toStrictEqual({ inboxId: INBOX_ID });
+    expect(mockGet).toHaveBeenCalledWith(AGENT_PATH);
   });
 
   it('accepts the snake_case --inbox_id flag', async () => {
@@ -84,7 +86,7 @@ describe('inboxes agent get command', () => {
     });
 
     expect(mockGet).toHaveBeenCalledTimes(1);
-    expect(mockGet.mock.calls[0][0]).toStrictEqual({ inboxId: INBOX_ID });
+    expect(mockGet).toHaveBeenCalledWith(AGENT_PATH);
   });
 
   it('errors with missing_id when no --inbox-id in non-interactive mode', async () => {

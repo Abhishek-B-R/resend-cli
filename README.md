@@ -887,7 +887,7 @@ resend inboxes drafts send <inbox-id> <draft-id>
 
 #### **`resend inboxes agent get`**
 
-Fetches the agent settings of an inbox: `instructions`, `tone`, and `enabled_actions`.
+Fetches the agent settings of an inbox: `instructions`, `tone`, and `actions`.
 
 ```bash
 resend inboxes agent get <inbox-id>
@@ -895,14 +895,14 @@ resend inboxes agent get <inbox-id>
 
 #### **`resend inboxes agent update`**
 
-Updates the agent settings. **At least one** of `--instructions`, `--tone`, or `--enabled-actions` is required. Omitted fields keep their current value. `--enabled-actions` replaces the whole set.
+Updates the agent settings. **At least one** of `--instructions`, `--tone`, or `--actions` is required. Omitted fields keep their current value. `--actions` replaces the whole set.
 
 `--tone` takes one of the presets `concise_professional`, `concise_casual`, `expanded_professional`, or `expanded_casual`, or custom text in your own words (max 64 characters).
 
 ```bash
 resend inboxes agent update <inbox-id> --tone concise_professional
 resend inboxes agent update <inbox-id> --tone "friendly and concise"
-resend inboxes agent update <inbox-id> --enabled-actions draft_reply add_labels
+resend inboxes agent update <inbox-id> --actions draft_reply add_labels
 ```
 
 ---

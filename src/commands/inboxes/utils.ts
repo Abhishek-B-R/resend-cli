@@ -45,3 +45,7 @@ export function renderInboxesTable(inboxes: Inbox[]): string {
   ]);
   return renderTable(['Email', 'Name', 'Unread', 'ID'], rows, '(no inboxes)');
 }
+
+export function inboxAgentPath(inboxId: string): string {
+  return `/inboxes/${encodeURIComponent(inboxId)}/agent`;
+}
