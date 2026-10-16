@@ -11,7 +11,7 @@ import {
 } from '../../../lib/pagination';
 import { pickId } from '../../../lib/prompts';
 import { snakeCaseAlias } from '../../../lib/snake-case-alias';
-import { inboxPickerConfig, resolveIdInputs } from '../utils';
+import { inboxPickerConfig, inboxSelector, resolveIdInputs } from '../utils';
 import {
   renderThreadSearchTable,
   threadFilterFlags,
@@ -25,8 +25,8 @@ export const searchInboxThreadsCommand = new Command('search')
   .description(
     'Search threads in an inbox by text, people, attachments, and dates',
   )
-  .argument('[inboxId]', 'Inbox UUID')
-  .option('--inbox-id <id>', 'Inbox UUID')
+  .argument('[inboxId]', 'Inbox UUID or email address')
+  .option('--inbox-id <id>', 'Inbox UUID or email address')
   .addOption(snakeCaseAlias('--inbox-id <id>'))
   .option(
     '--query <text>',
@@ -88,9 +88,8 @@ export const searchInboxThreadsCommand = new Command('search')
     buildHelpText({
       context: `Results are ordered by newest activity first and paginate like
 "resend inboxes threads list". Each result names the email that matched
-(matched_email_id) and the matching snippets (highlights).
-"threads emails get", "reply" and "forward" accept matched_email_id as
-the email ID, but it is not equal to the id those commands return.
+(matched_email_id). It is the email ID that "threads emails list" returns,
+so pass it to "threads emails get", "reply" and "forward".
 
 Different flags combine, so a thread must match all of them. --folders,
 --labels, --read and --unread apply to the thread. The other filters must all
@@ -102,7 +101,7 @@ matching email.
 
 Search can be up to about a minute behind new emails. To browse an inbox
 exactly and up to date, use "resend inboxes threads list".`,
-      output: `  {"object":"list","has_more":false,"data":[{"id":"<uuid>","subject":"<subject>|null","from":"<sender>|null","to":[],"cc":[],"bcc":[],"labels":[],"email_count":1,"has_attachment":false,"has_draft":false,"read":false,"received_at":"<date>","folder":"inbox|archive|spam|sent|trash","matched_email_id":"<uuid>|null","highlights":{"subject":["<snippet>"]}}]}`,
+      output: `  {"object":"list","has_more":false,"data":[{"id":"<uuid>","subject":"<subject>|null","from":"<sender>|null","to":[],"cc":[],"bcc":[],"labels":[],"email_count":1,"has_attachment":false,"has_draft":false,"read":false,"received_at":"<date>","folder":"inbox|archive|spam|sent|trash","matched_email_id":"<uuid>|null"}]}`,
       errorCodes: [
         'auth_error',
         'invalid_options',
@@ -147,7 +146,7 @@ exactly and up to date, use "resend inboxes threads list".`,
         loading: 'Searching threads...',
         sdkCall: (resend) =>
           resend.inboxes.threads.search({
-            inboxId,
+            ...inboxSelector(inboxId),
             ...filters,
             query: opts.query,
             from: opts.from,

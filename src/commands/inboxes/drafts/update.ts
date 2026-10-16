@@ -7,14 +7,14 @@ import { buildHelpText } from '../../../lib/help-text';
 import { outputError } from '../../../lib/output';
 import { pickId } from '../../../lib/prompts';
 import { snakeCaseAlias } from '../../../lib/snake-case-alias';
-import { inboxPickerConfig, resolveIdInputs } from '../utils';
+import { inboxPickerConfig, inboxSelector, resolveIdInputs } from '../utils';
 import { inboxDraftPickerConfig } from './utils';
 
 export const updateInboxDraftCommand = new Command('update')
   .description("Update a draft's recipients, subject, body, or attachments")
-  .argument('[inboxId]', 'Inbox UUID')
+  .argument('[inboxId]', 'Inbox UUID or email address')
   .argument('[draftId]', 'Draft UUID')
-  .option('--inbox-id <id>', 'Inbox UUID')
+  .option('--inbox-id <id>', 'Inbox UUID or email address')
   .addOption(snakeCaseAlias('--inbox-id <id>'))
   .option('--draft-id <id>', 'Draft UUID')
   .addOption(snakeCaseAlias('--draft-id <id>'))
@@ -59,8 +59,9 @@ and an optional ;filename=, as on "resend emails send". Quote values that contai
 --attachments-file takes a JSON array of objects with content (base64), filename
 and content_type. Draft attachments need content, filename and content_type.
 A URL or a ;cid= returns an error. The files on a draft can total at most 25 MB.
-An empty file or a blocked file type, such as .exe, returns an error.`,
-      output: `  {"object":"inbox_draft","id":"<uuid>","type":"standalone|reply","to":["<address>"]|null,"cc":[],"bcc":[],"subject":"<subject>|null","html":"<html>|null","text":"<text>|null","thread_id":"<uuid>|null","reply_to_email_id":"<uuid>|null","email_id":"<uuid>|null","attachments":[{"id":"<uuid>","filename":"<name>","content_type":"<type>","size":123}],"created_at":"<date>","updated_at":"<date>"}`,
+An empty file or a blocked file type, such as .exe, returns an error.
+The output holds only the draft ID. Run "resend inboxes drafts get" to read the draft.`,
+      output: `  {"object":"inbox_draft","id":"<uuid>"}`,
       errorCodes: [
         'auth_error',
         'no_changes',
@@ -160,7 +161,7 @@ An empty file or a blocked file type, such as .exe, returns an error.`,
     // The SDK requires at least one change at the type level, guaranteed by
     // the no_changes guard but not provable by tsc across conditional spreads.
     const payload = {
-      inboxId,
+      ...inboxSelector(inboxId),
       draftId,
       ...(opts.to !== undefined && { to: opts.to }),
       ...(opts.clearTo && { to: null }),

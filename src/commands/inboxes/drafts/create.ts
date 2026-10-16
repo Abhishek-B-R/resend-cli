@@ -7,12 +7,12 @@ import { buildHelpText } from '../../../lib/help-text';
 import { outputError } from '../../../lib/output';
 import { pickId } from '../../../lib/prompts';
 import { snakeCaseAlias } from '../../../lib/snake-case-alias';
-import { inboxPickerConfig, resolveIdInputs } from '../utils';
+import { inboxPickerConfig, inboxSelector, resolveIdInputs } from '../utils';
 
 export const createInboxDraftCommand = new Command('create')
   .description('Create a draft in an inbox')
-  .argument('[inboxId]', 'Inbox UUID')
-  .option('--inbox-id <id>', 'Inbox UUID')
+  .argument('[inboxId]', 'Inbox UUID or email address')
+  .option('--inbox-id <id>', 'Inbox UUID or email address')
   .addOption(snakeCaseAlias('--inbox-id <id>'))
   .option('--to <addresses...>', 'Recipient addresses')
   .option('--cc <addresses...>', 'Cc addresses')
@@ -55,8 +55,8 @@ Only one unsent reply draft can target an email. A reply draft for an email
 that already has one returns the ID of the existing draft. That request ignores
 every other flag, except the attachments, which replace the attachments of the
 existing draft.
-A reply draft created without --subject has an empty subject and gets no "Re:"
-prefix, so set one before you send it.
+A reply draft created without --subject is sent with the subject of the thread,
+prefixed with "Re:" when it does not already start with it.
 
 Attachments: --attachment takes a local file path plus ;type= (the MIME type)
 and an optional ;filename=, as on "resend emails send". Quote values that contain ";".
@@ -132,7 +132,7 @@ Send the draft later with "resend inboxes drafts send".`,
     // replyToEmailId at the type level; both are guaranteed by the guards
     // above but tsc cannot prove it across the conditional spreads.
     const payload = {
-      inboxId,
+      ...inboxSelector(inboxId),
       ...(opts.to && { to: opts.to }),
       ...(opts.cc && { cc: opts.cc }),
       ...(opts.bcc && { bcc: opts.bcc }),
@@ -149,6 +149,7 @@ Send the draft later with "resend inboxes drafts send".`,
     await runCreate(
       {
         loading: 'Creating draft...',
+        permission: 'sending_access',
         sdkCall: (resend) =>
           resend.inboxes.drafts.create(
             payload,
